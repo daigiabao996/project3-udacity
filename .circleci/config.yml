@@ -82,9 +82,6 @@ jobs:
               cd frontend
               npm install
               npm audit --audit-level=critical
-        - save_cache:
-            paths: [frontend/node_modules]
-            key: scan-frontend
 
     scan-backend:
       docker:
@@ -99,9 +96,6 @@ jobs:
               cd backend
               npm install
               npm audit --audit-level=critical
-        - save_cache:
-            paths: [backend/node_modules]
-            key: scan-backend
 
 workflows:
   default:
