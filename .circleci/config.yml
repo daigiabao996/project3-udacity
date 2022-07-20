@@ -79,7 +79,7 @@ jobs:
     steps:
       - checkout
       - restore_cache:
-         keys: [frontend-scan]
+         keys: [backend-scan]
       - run:
          name: scan-frontend
          command: |
