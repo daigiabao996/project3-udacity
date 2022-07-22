@@ -129,18 +129,3 @@ workflows:
           requires: [build-frontend]
       - scan-backend:
           requires: [build-backend]
-      - slack/on-hold:
-          context: slack-secrets
-          filters:
-            tags:
-              only: /^v.*/
-          requires:
-            - test-backend
-      - pause_workflow:
-          filters:
-            tags:
-              only: /^v.*/
-          requires:
-            - test-backend
-            - slack/on-hold
-          type: approval
