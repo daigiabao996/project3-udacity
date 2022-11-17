@@ -26,14 +26,44 @@ commands:
           command: |          
             aws s3 rm s3://udacity-<<parameters.Workflow_ID>> --recursive
             aws cloudformation delete-stack --stack-name "udacity-backend-<<parameters.Workflow_ID>>"
-            aws cloudformation delete-stack --stack-name "udacity-frontend-<<parameters.Workflow_ID>>"
-  
+            aws cloudformation delete-stack --stack-name "udacity-frontend-<<parameters.Workflow_ID>>"  
+
+  install_ansible:
+    description: Install Ansible
+    steps:
+      - run:
+          name: Install Ansible
+          command: |
+            sudo apt update
+            sudo apt install software-properties-common -y
+            sudo add-apt-repository --yes --update ppa:ansible/ansible
+            sudo apt install ansible -y
+            
   revert-migrations:
     description: Revert the last migration if successfully run in the current workflow.
     parameters:
       Workflow_ID:
         type: string
         default: ${CIRCLE_WORKFLOW_ID:0:7}
+    steps:
+      - run:
+          name: Revert migrations
+          when: on_fail
+          command: |
+            SUCCESS=$(curl --insecure https://kvdb.io/E3uZytWZmmgH4Leono8Afd/migration_<<parameters.Workflow_ID>>)
+            if(( $SUCCESS==1 )); 
+            then
+              cd ~/project/backend
+              npm install
+              npm run migration:revert
+            fi
+
+  notify_on_failure:
+    steps:
+      - slack/notify:
+          event: fail
+          channel: notification_failed_cicd
+          template: basic_fail_1
 jobs:
   build-frontend:
     docker:
@@ -186,21 +216,15 @@ jobs:
       - checkout
       - install_ansible
       - add_ssh_keys:
-          fingerprints: ["14:f0:23:f5:1e:13:58:55:76:bc:7e:f8:30:26:db:2c:4d:35:d1:82"]
+          fingerprints: ["a2:5f:50:de:6b:ea:78:82:8e:0a:db:d5:80:46:2c:86:51:47:06:49"]
       - attach_workspace:
           at: ~/
       - run:
           name: Configure server
           command: |
             cd .circleci/ansible
-                         
-            cd .ssh
-            eval `ssh-agent`
-            chmod 400 keyp3.pem
-            ssh-add keyp3.pem 
-            cd ..            
             cat inventory.txt                                        
-            ansible-playbook -i inventory.txt -u ubuntu --private-key .ssh/keyp3.pem configure-server.yml
+            ansible-playbook -i inventory.txt configure-server.yml
       - notify_on_failure
       - destroy-environment
 
@@ -219,10 +243,10 @@ jobs:
       - run:
           name: Send migration results to kvdb.io
           command: |
-            echo https://kvdb.io/CJhzGNYEFHWL71z3PVjMum/migration_${CIRCLE_WORKFLOW_ID:0:7}
+            echo https://kvdb.io/E3uZytWZmmgH4Leono8Afd/migration_${CIRCLE_WORKFLOW_ID:0:7}
             if grep -q "has been executed successfully." ~/project/backend/migrations_dump.txt
             then
-              curl -k https://kvdb.io/CJhzGNYEFHWL71z3PVjMum/migration_${CIRCLE_WORKFLOW_ID:0:7} -d '1'
+              curl -k https://kvdb.io/E3uZytWZmmgH4Leono8Afd/migration_${CIRCLE_WORKFLOW_ID:0:7} -d '1'
             fi      
       - notify_on_failure
       - destroy-environment
