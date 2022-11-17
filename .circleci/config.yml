@@ -27,6 +27,13 @@ commands:
             aws s3 rm s3://udacity-<<parameters.Workflow_ID>> --recursive
             aws cloudformation delete-stack --stack-name "udacity-backend-<<parameters.Workflow_ID>>"
             aws cloudformation delete-stack --stack-name "udacity-frontend-<<parameters.Workflow_ID>>"
+  
+  revert-migrations:
+    description: Revert the last migration if successfully run in the current workflow.
+    parameters:
+      Workflow_ID:
+        type: string
+        default: ${CIRCLE_WORKFLOW_ID:0:7}
 jobs:
   build-frontend:
     docker:
@@ -171,8 +178,56 @@ jobs:
           paths:
             - project/.circleci/ansible/inventory.txt
       - destroy-environment
-      
-    # Here's where you will add some code to rollback on failure
+  
+  configure-infrastructure:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - install_ansible
+      - add_ssh_keys:
+          fingerprints: ["14:f0:23:f5:1e:13:58:55:76:bc:7e:f8:30:26:db:2c:4d:35:d1:82"]
+      - attach_workspace:
+          at: ~/
+      - run:
+          name: Configure server
+          command: |
+            cd .circleci/ansible
+                         
+            cd .ssh
+            eval `ssh-agent`
+            chmod 400 keyp3.pem
+            ssh-add keyp3.pem 
+            cd ..            
+            cat inventory.txt                                        
+            ansible-playbook -i inventory.txt -u ubuntu --private-key .ssh/keyp3.pem configure-server.yml
+      - notify_on_failure
+      - destroy-environment
+
+  run-migrations:
+    docker:
+      - image: cimg/node:13.8.0
+    steps:
+      - checkout
+      - install_awscli
+      - run:
+          name: Run migrations
+          command: |
+            cd backend
+            npm install
+            npm run migrations > migrations_dump.txt
+      - run:
+          name: Send migration results to kvdb.io
+          command: |
+            echo https://kvdb.io/CJhzGNYEFHWL71z3PVjMum/migration_${CIRCLE_WORKFLOW_ID:0:7}
+            if grep -q "has been executed successfully." ~/project/backend/migrations_dump.txt
+            then
+              curl -k https://kvdb.io/CJhzGNYEFHWL71z3PVjMum/migration_${CIRCLE_WORKFLOW_ID:0:7} -d '1'
+            fi      
+      - notify_on_failure
+      - destroy-environment
+      - revert-migrations
+
 workflows:
   default:
     jobs:
@@ -191,3 +246,7 @@ workflows:
           requires: [build-backend]
       - deploy-infrastructure:
           requires: [test-frontend, test-backend, scan-frontend, scan-backend]
+      - configure-infrastructure:
+          requires: [deploy-infrastructure]
+      - run-migrations:
+          requires: [configure-infrastructure]
